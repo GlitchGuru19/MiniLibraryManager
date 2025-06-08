@@ -6,8 +6,34 @@ package main
 
 import "fmt"
 
+type Book struct{
+	Title string 
+	Author string 
+	Year int
+}
+
+
+func listBooks(){
+	fmt.Println("Function to display all the books")
+}
+
+
+func addBook(){
+	fmt.Println("Function to add books")
+}
+
 func main() {
 	var option int
+
+	books := Book{
+		Title: "Harry Potter",
+		Author: "JK Rolins",
+		Year: 2002,
+	}
+
+	fmt.Println(books.Title)
+	fmt.Println(books.Author)
+	fmt.Println(books.Year)
 
 	fmt.Println("\nWelcome to the Mini Library Manager")
 	fmt.Println()
