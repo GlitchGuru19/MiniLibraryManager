@@ -89,10 +89,12 @@ func borrowBook() {
 // Function to Return a borrowed book
 func returnBook() {
 
-	if len(book) == 0{
+	fmt.Println("Current books: ", book)
+
+	if len(book) == 0 {
 		fmt.Println("There are no books to return")
 		return
-	} 
+	}
 
 	var number int
 	fmt.Print("Enter the number of the book you want to return: ")
@@ -101,19 +103,19 @@ func returnBook() {
 	// converting to zero index as we want the counting to start from 0
 	limit := number - 1
 
-	if limit < 0 || limit >= len(book){
+	if limit < 0 || limit >= len(book) {
 		fmt.Println("Invalid number. Please try again.")
 		return
 	}
 
 	// Check if already active
 	if !book[limit].isBorrowed {
-		fmt.Printf("%s is already returned!\n", book[limit].Title)
+		fmt.Printf("%s has already been returned!\n", book[limit].Title)
 		return
 	}
 
 	book[limit].isBorrowed = false
-	fmt.Printf("%s is now returned.\n", book[limit].Title)
+	fmt.Printf("%s has now been returned.\n", book[limit].Title)
 
 }
 
@@ -135,7 +137,6 @@ func listBooks() {
 			i+1, books.Title, books.Author, books.Year, status)
 	}
 }
-
 
 func main() {
 	var option int
