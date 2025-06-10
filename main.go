@@ -9,15 +9,18 @@ import (
 )
 
 // A simple struct with exported fields
-type Book struct{
-	Title string 
-	Author string 
-	Year int
-	// isBorrowed bool, comented out to test and run the rest..
+type Book struct {
+	Title      string
+	Author     string
+	Year       int
+	isBorrowed bool //, comented out to test and run the rest..
 }
 
+// Slice of type Book declared globally
+var book []Book
+
 // Function to display the menu
-func displayMenu(){
+func displayMenu() {
 	fmt.Println("\nWelcome to the Mini Library Manager")
 	fmt.Println()
 	fmt.Println("please select an option")
@@ -29,15 +32,13 @@ func displayMenu(){
 }
 
 // Function to add a book
-func addBook(){
-	// Slice of type Book
-	var book []Book
-	// Here we variables we will pass into the slice 
+func addBook() {
+
+	// Here we variables we will pass into the slice
 	var (
-		title string
+		title  string
 		author string
-		year int
-		// isBorrowed bool
+		year   int
 	)
 
 	fmt.Println("Add a book")
@@ -48,27 +49,47 @@ func addBook(){
 	fmt.Print("Enter the Year: ")
 	fmt.Scanln(&year)
 
-	books := Book{Title: title, Author: author, Year: year}
+	books := Book{Title: title, Author: author, Year: year, isBorrowed: false}
 	book = append(book, books)
 	fmt.Println("Book added successfully")
 }
 
 // Function to add a book
-func borrowBook(){
+func borrowBook() {
 	// function to borrow a book
+	var number int
+
+	fmt.Println("Enter the number of the book you want to borrow: ")
+	fmt.Scanln(&number)
 }
 
 // Function to Return a borrowed book
-func returnBook(){
+func returnBook() {
 	// Function to return a book
+	var number int
+	fmt.Println("Enter the number of the book you want to return: ")
+	fmt.Scanln(&number)
 }
 
 // Function to display/list all the books
-func listBooks(book []Book){
+func listBooks() {
 	fmt.Println("Function to display all the books")
+	if len(book) == 0 {
+		fmt.Println("There are no books to display.")
+		return
+	}
+
+	fmt.Println("List of all books:")
+	for i, books := range book {
+		status := "nBorrowed"
+		if books.isBorrowed {
+			status = "Borrowed"
+		}
+		fmt.Printf("%d. Name: %s, Role: %s, Age: %d, Status: %s\n",
+			i+1, books.Title, books.Author, books.Year, status)
+	}
 
 }
-
 
 func main() {
 	var option int
@@ -86,7 +107,6 @@ func main() {
 	// fmt.Println(books.Year)
 	// fmt.Println(books.isBorrowed)
 
-
 	for {
 
 		displayMenu()
@@ -97,7 +117,7 @@ func main() {
 		case 1:
 			addBook()
 		case 2:
-			//listBooks()
+			listBooks()
 		case 3:
 			//borrowBook()
 			fmt.Println("Borrow book")
