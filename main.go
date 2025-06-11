@@ -138,7 +138,8 @@ func listBooks() {
 	}
 }
 
-func main() {
+
+func menuSelector(){
 	var option int
 
 	/* this is just for testing purposes, as we want to know if it is working or not
@@ -177,4 +178,8 @@ func main() {
 			fmt.Println("Wrong option. Please ty again.")
 		}
 	}
+}
+
+func main() {
+	menuSelector()
 }
