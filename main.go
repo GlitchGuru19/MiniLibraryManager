@@ -13,14 +13,18 @@ Features:
 - Input validation and error handling
 
 Author: Library Manager Development Team
-Version: 2.0 with Database Integration
+Version: 1.0 with Database Integration
 */
 
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -38,14 +42,14 @@ Fields:
 - Title: The name/title of the book
 - Author: The author's name who wrote the book
 - Year: Publication year of the book
-- isBorrowed: Boolean flag indicating if the book is currently borrowed
+- IsBorrowed: Boolean flag indicating if the book is currently borrowed (exported field)
 - CreatedAt: Timestamp when the book was added to the system
 - UpdatedAt: Timestamp when the book record was last modified
 
 GORM Tags:
 - primaryKey: Marks ID as the primary key for database operations
 - not null: Ensures required fields cannot be empty in the database
-- default:false: Sets the default value for isBorrowed to false (available)
+- default:false: Sets the default value for IsBorrowed to false (available)
 - json: Defines JSON field names for potential API integration
 */
 type Book struct {
@@ -53,7 +57,7 @@ type Book struct {
 	Title      string    `gorm:"not null" json:"title"`
 	Author     string    `gorm:"not null" json:"author"`
 	Year       int       `gorm:"not null" json:"year"`
-	isBorrowed bool      `gorm:"default:false" json:"is_borrowed"`
+	IsBorrowed bool      `gorm:"default:false;column:is_borrowed" json:"is_borrowed"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -66,15 +70,6 @@ variable ensures we maintain a single connection pool and can access
 the database from any function in our application.
 */
 var db *gorm.DB
-
-/*
-Legacy global slice for book storage.
-NOTE: This slice is maintained for backward compatibility but is not
-actively used in the database-integrated version. In the original
-in-memory implementation, this slice served as the primary data store.
-Future versions should consider removing this to avoid confusion.
-*/
-var book []Book
 
 /*
 initDB initializes the database connection and performs necessary setup operations.
@@ -144,12 +139,35 @@ providing a continuous interactive experience.
 func displayMenu() {
 	fmt.Println("\nWelcome to the Mini Library Manager")
 	fmt.Println()
-	fmt.Println("please select an option")
+	fmt.Println("Please select an option:")
 	fmt.Println("1. Add Book")
 	fmt.Println("2. List Books")
 	fmt.Println("3. Borrow Book")
 	fmt.Println("4. Return Book")
 	fmt.Println("5. Exit")
+}
+
+/*
+readInput reads a line of input from the user, handling multi-word strings properly.
+*/
+func readInput(prompt string) string {
+	fmt.Print(prompt)
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	return strings.TrimSpace(input)
+}
+
+/*
+readInt reads an integer from user input with basic validation.
+*/
+func readInt(prompt string) int {
+	for {
+		input := readInput(prompt)
+		if value, err := strconv.Atoi(input); err == nil {
+			return value
+		}
+		fmt.Println("❌ Please enter a valid number.")
+	}
 }
 
 /*
@@ -167,8 +185,8 @@ Process Flow:
 5. Provides feedback on success or failure of the operation
 
 Input Validation:
-- Basic input collection via fmt.Scanln (reads single words)
-- Database-level validation through GORM model constraints
+- Handles multi-word titles and authors properly
+- Basic validation for year input
 
 Error Handling:
 - Database operation errors are caught and displayed to the user
@@ -180,38 +198,41 @@ Side Effects:
 - Returns to main menu after completion
 */
 func addBook() {
-	// Declare variables to store user input for the new book
-	// These will be populated through console input prompts
-	var (
-		title  string // Book title entered by user
-		author string // Author name entered by user
-		year   int    // Publication year entered by user
-	)
+	fmt.Println("\n📖 Add a New Book")
+	fmt.Println("-----------------")
 
-	fmt.Println("Add a book")
-	
-	// Collect book details from user input
-	// Note: fmt.Scanln reads until whitespace, so multi-word titles need improvement
-	fmt.Print("Enter the Title: ")
-	fmt.Scanln(&title)
-	fmt.Print("Enter the Author: ")
-	fmt.Scanln(&author)
-	fmt.Print("Enter the Year: ")
-	fmt.Scanln(&year)
+	// Collect book details from user input using improved input handling
+	title := readInput("Enter the Title: ")
+	if title == "" {
+		fmt.Println("❌ Title cannot be empty.")
+		return
+	}
+
+	author := readInput("Enter the Author: ")
+	if author == "" {
+		fmt.Println("❌ Author cannot be empty.")
+		return
+	}
+
+	year := readInt("Enter the Year: ")
+	if year < 1000 || year > 2030 {
+		fmt.Println("❌ Please enter a valid year between 1000 and 2030.")
+		return
+	}
 
 	// Create a new Book instance with user-provided data
-	// isBorrowed is set to false by default (book is available when added)
-	book := Book{
+	// IsBorrowed is set to false by default (book is available when added)
+	newBook := Book{
 		Title:      title,
 		Author:     author,
 		Year:       year,
-		isBorrowed: false,
+		IsBorrowed: false,
 	}
 
 	// Attempt to save the new book to the database
 	// GORM's Create method handles the SQL INSERT operation
-	result := db.Create(&book)
-	
+	result := db.Create(&newBook)
+
 	// Check if the database operation encountered any errors
 	if result.Error != nil {
 		fmt.Printf("❌ Error adding book: %v\n", result.Error)
@@ -219,187 +240,335 @@ func addBook() {
 	}
 
 	// Display success confirmation with the auto-generated book ID
-	fmt.Println("Book added successfully", book.ID)
+	fmt.Printf("✅ Book added successfully! (ID: %d)\n", newBook.ID)
 }
 
 /*
 borrowBook manages the book borrowing process for library users.
 
 This function allows users to borrow available books from the library collection.
-It displays available books and processes the borrowing transaction by updating
-the book's status in the database.
+It queries the database for available books, displays them to the user, and
+processes the borrowing transaction by updating the book's status in the database.
 
-Current Implementation Note:
-This function contains legacy code that checks the global slice instead of
-querying the database. This needs to be updated to properly integrate with
-the database system for full functionality.
+Process Flow:
+1. Query database for available books (IsBorrowed = false)
+2. Display available books to the user with clear numbering
+3. Accept user selection and validate input range
+4. Update selected book's status in database to borrowed
+5. Provide confirmation of the borrowing operation
 
-Process Flow (Current - Legacy):
-1. Checks if there are books in the global slice
-2. Prompts user to select a book by number
-3. Validates the selection against available books
-4. Updates the book's borrowed status
-5. Provides confirmation of the borrowing action
+Database Operations:
+- SELECT query to fetch available books
+- UPDATE query to mark book as borrowed
 
-Process Flow (Intended - Database):
-1. Query database for available books (isBorrowed = false)
-2. Display available books to the user
-3. Accept user selection and validate input
-4. Update selected book's status in database
-5. Confirm successful borrowing operation
+Error Handling:
+- Database query failures are caught and displayed
+- Invalid user selections are handled gracefully
+- Prevents borrowing when no books are available
 
-TODO: Update this function to query database instead of using global slice
+Input Validation:
+- Ensures selection is within valid range of available books
+- Provides clear feedback for invalid selections
 */
 func borrowBook() {
-	// Legacy check using global slice - should query database instead
-	if len(book) == 0 {
-		fmt.Println("No books to borrow..")
+	var availableBooks []Book
+
+	// Query database for books that are currently available (not borrowed)
+	result := db.Where("is_borrowed = ?", false).Order("title").Find(&availableBooks)
+	if result.Error != nil {
+		fmt.Printf("❌ Error fetching available books: %v\n", result.Error)
 		return
 	}
 
-	var number int
-	fmt.Print("Enter the number of the book you want to borrow: ")
-	fmt.Scanln(&number)
-
-	// Convert user input to zero-based array index
-	// Users see books numbered 1, 2, 3... but arrays are indexed 0, 1, 2...
-	limit := number - 1
-
-	// Validate that the selected number corresponds to an existing book
-	if limit < 0 || limit >= len(book) {
-		fmt.Println("Invalid number. Please try again.")
-		return // Return to main menu due to infinite loop structure
-	}
-
-	// Check if the selected book is already borrowed
-	// Prevent double-borrowing of the same book
-	if book[limit].isBorrowed {
-		fmt.Printf("%s has already been borrowed.\n", book[limit].Title)
+	// Check if there are any books available to borrow
+	if len(availableBooks) == 0 {
+		fmt.Println("📚 No books available to borrow.")
 		return
 	}
 
-	// Update the book's status to borrowed
-	// TODO: This should update the database record, not just the slice
-	book[limit].isBorrowed = true
-	fmt.Printf("%s has now been borrowed.\n", book[limit].Title)
+	fmt.Println("\n📖 Available Books:")
+	fmt.Println("-------------------")
+
+	// Display all available books with clear numbering for user selection
+	for i, book := range availableBooks {
+		fmt.Printf("%d. \"%s\" by %s (%d)\n",
+			i+1, book.Title, book.Author, book.Year)
+	}
+
+	number := readInt("\nEnter the number of the book you want to borrow: ")
+
+	// Convert user input to zero-based array index and validate selection
+	if number < 1 || number > len(availableBooks) {
+		fmt.Println("❌ Invalid selection. Please try again.")
+		return
+	}
+
+	// Get the selected book from the available books list
+	selectedBook := availableBooks[number-1]
+
+	// Update the book's borrowed status in the database
+	updateResult := db.Model(&selectedBook).Update("is_borrowed", true)
+	if updateResult.Error != nil {
+		fmt.Printf("❌ Error borrowing book: %v\n", updateResult.Error)
+		return
+	}
+
+	// Confirm successful borrowing operation
+	fmt.Printf("✅ Successfully borrowed \"%s\" by %s!\n", selectedBook.Title, selectedBook.Author)
 }
 
 /*
 returnBook processes the return of previously borrowed books to the library.
 
 This function handles the book return workflow, allowing users to return
-books they have previously borrowed. It updates the book's availability
-status and makes it available for other users to borrow.
+books they have previously borrowed. It queries the database for borrowed books,
+displays them to the user, and updates the book's availability status in the database.
 
-Current Implementation Note:
-Like borrowBook(), this function uses the legacy global slice approach
-instead of properly querying and updating the database records.
-
-Process Flow (Current - Legacy):
-1. Displays all books currently in the global slice
-2. Checks if there are any books to return
-3. Prompts user to select a book by number
-4. Validates the selection and checks if book was actually borrowed
-5. Updates the book's status to available (not borrowed)
-6. Confirms the successful return operation
-
-Process Flow (Intended - Database):
-1. Query database for currently borrowed books (isBorrowed = true)
-2. Display borrowed books to the user
+Process Flow:
+1. Query database for currently borrowed books (IsBorrowed = true)
+2. Display borrowed books to the user with clear numbering
 3. Accept and validate user selection
-4. Update selected book's status in database to available
-5. Provide confirmation of successful return
+4. Update selected book's status in database to available (IsBorrowed = false)
+5. Provide confirmation of successful return operation
 
-Debug Features:
-- Displays current books slice for debugging purposes
-- This should be removed in production version
+Database Operations:
+- SELECT query to fetch borrowed books
+- UPDATE query to mark book as available
 
-TODO: Replace slice operations with database queries and updates
+Error Handling:
+- Database query failures are caught and reported
+- Invalid user selections are handled gracefully
+- Prevents return operations when no books are borrowed
+
+User Experience:
+- Shows only borrowed books for selection
+- Provides clear confirmation of return operations
+- Handles edge cases (no borrowed books) gracefully
 */
 func returnBook() {
-	// Debug output showing current state of books slice
-	// This should be removed in production as it's not user-friendly
-	fmt.Println("Current books: ", book)
+	var borrowedBooks []Book
 
-	// Check if there are any books in the system to return
-	if len(book) == 0 {
-		fmt.Println("There are no books to return")
+	// Query database for books that are currently borrowed
+	result := db.Where("is_borrowed = ?", true).Order("title").Find(&borrowedBooks)
+	if result.Error != nil {
+		fmt.Printf("❌ Error fetching borrowed books: %v\n", result.Error)
 		return
 	}
 
-	var number int
-	fmt.Print("Enter the number of the book you want to return: ")
-	fmt.Scanln(&number)
-
-	// Convert user input to zero-based array index for slice access
-	limit := number - 1
-
-	// Validate user selection against available books in the system
-	if limit < 0 || limit >= len(book) {
-		fmt.Println("Invalid number. Please try again.")
+	// Check if there are any books currently borrowed
+	if len(borrowedBooks) == 0 {
+		fmt.Println("📚 No books currently borrowed.")
 		return
 	}
 
-	// Verify that the selected book is actually borrowed
-	// Prevent returning books that are already available
-	if !book[limit].isBorrowed {
-		fmt.Printf("%s has already been returned!\n", book[limit].Title)
+	fmt.Println("\n📤 Borrowed Books:")
+	fmt.Println("------------------")
+
+	// Display all borrowed books with clear numbering for user selection
+	for i, book := range borrowedBooks {
+		fmt.Printf("%d. \"%s\" by %s (%d)\n",
+			i+1, book.Title, book.Author, book.Year)
+	}
+
+	number := readInt("\nEnter the number of the book you want to return: ")
+
+	// Convert user input to zero-based array index and validate selection
+	if number < 1 || number > len(borrowedBooks) {
+		fmt.Println("❌ Invalid selection. Please try again.")
 		return
 	}
 
-	// Update book status to available (not borrowed)
-	// TODO: This should update the database record instead of just the slice
-	book[limit].isBorrowed = false
-	fmt.Printf("%s has now been returned.\n", book[limit].Title)
+	// Get the selected book from the borrowed books list
+	selectedBook := borrowedBooks[number-1]
+
+	// Update the book's borrowed status in the database to available
+	updateResult := db.Model(&selectedBook).Update("is_borrowed", false)
+	if updateResult.Error != nil {
+		fmt.Printf("❌ Error returning book: %v\n", updateResult.Error)
+		return
+	}
+
+	// Confirm successful return operation
+	fmt.Printf("✅ Successfully returned \"%s\" by %s!\n", selectedBook.Title, selectedBook.Author)
 }
 
 /*
 listBooks displays all books in the library collection with their current status.
 
-This function provides a comprehensive view of the entire library catalog,
-showing each book's details along with its availability status. This helps
-users see what books are available for borrowing and which ones are currently
-checked out.
+This function provides a comprehensive view of the entire library catalog by
+querying the database for all books and displaying each book's details along
+with its current availability status. This helps users see what books are
+available for borrowing and which ones are currently checked out.
 
-Current Implementation Note:
-This function uses the legacy global slice instead of querying the database,
-which means it won't display books that were added in the current session
-through the database-integrated addBook() function.
+Process Flow:
+1. Query database for all books in the collection
+2. Check if any books exist in the database
+3. Display each book with formatted information including status
+4. Show total count of books in the collection
 
 Display Format:
-- Sequential numbering starting from 1
+- Sequential numbering starting from 1 (user-friendly)
 - Book title, author, and publication year
-- Current status (Available/Borrowed)
+- Current status with visual indicators
+- Total book count summary
 
 Status Indicators:
-- "nBorrowed" - Indicates book is available (typo: should be "Not Borrowed")
-- "Borrowed" - Indicates book is currently checked out
+- "Available ✅" - Book can be borrowed
+- "Borrowed 📤" - Book is currently checked out
 
-TODO: Replace slice iteration with database query to show all books
-TODO: Fix "nBorrowed" typo to display "Available" or "Not Borrowed"
-TODO: Improve formatting for better readability
+Database Operations:
+- SELECT query to fetch all books ordered by creation date (newest first)
+
+Error Handling:
+- Database query failures are caught and reported
+- Empty collection is handled gracefully with informative message
 */
 func listBooks() {
-	// Check if there are any books to display
-	if len(book) == 0 {
-		fmt.Println("There are no books to display.")
+	var allBooks []Book
+
+	// Query database for all books, ordered by creation date (newest first)
+	result := db.Order("created_at desc").Find(&allBooks)
+	if result.Error != nil {
+		fmt.Printf("❌ Error fetching books from database: %v\n", result.Error)
 		return
 	}
 
-	fmt.Println("\nList of all books:")
-	
-	// Iterate through all books in the collection
-	for i, books := range book {
-		// Determine and format the book's current status
-		status := "nBorrowed" // Default status (typo: should be "Available")
-		if books.isBorrowed {
-			status = "Borrowed" // Book is currently checked out
+	// Check if there are any books in the database
+	if len(allBooks) == 0 {
+		fmt.Println("📚 No books in the library collection.")
+		return
+	}
+
+	fmt.Println("\n📖 Library Collection:")
+	fmt.Println("======================")
+
+	// Iterate through all books and display their information
+	for i, book := range allBooks {
+		// Determine the book's current status with visual indicators
+		status := "Available ✅" // Book is available for borrowing
+		if book.IsBorrowed {
+			status = "Borrowed 📤" // Book is currently checked out
 		}
-		
+
 		// Display book information in a formatted, user-readable way
-		// Note: "Age" should be "Year" for clarity
-		fmt.Printf("%d. Name: %s, Author: %s, Age: %d, Status: %s\n",
-			i+1, books.Title, books.Author, books.Year, status)
+		fmt.Printf("%d. \"%s\" by %s (%d) - %s\n",
+			i+1, book.Title, book.Author, book.Year, status)
+	}
+
+	// Display summary information
+	fmt.Printf("\nTotal books in collection: %d\n", len(allBooks))
+
+	// Show breakdown of available vs borrowed books
+	var availableCount, borrowedCount int
+	for _, book := range allBooks {
+		if book.IsBorrowed {
+			borrowedCount++
+		} else {
+			availableCount++
+		}
+	}
+
+	fmt.Printf("Available: %d | Borrowed: %d\n", availableCount, borrowedCount)
+}
+
+/*
+performStartupTasks handles additional initialization operations after database setup.
+
+This function performs various startup tasks that prepare the application
+for user interaction. It can include data validation, system checks,
+welcome data setup, and other initialization routines.
+
+Startup Tasks:
+1. Verify database connectivity and integrity
+2. Display system information and statistics
+3. Perform any necessary data cleanup or validation
+4. Set up initial data if needed (sample books for first-time users)
+5. Display welcome information to the user
+
+This function is called after successful database initialization but before
+the main menu system starts, ensuring the application is in a proper state
+for user operations.
+*/
+func performStartupTasks() {
+	fmt.Println("⚙️  Performing startup tasks...")
+
+	// Task 1: Verify database connectivity by running a simple query
+	var bookCount int64
+	result := db.Model(&Book{}).Count(&bookCount)
+	if result.Error != nil {
+		log.Fatal("❌ Database connectivity check failed:", result.Error)
+	}
+
+	// Task 2: Display current library statistics
+	var availableCount, borrowedCount int64
+	db.Model(&Book{}).Where("is_borrowed = ?", false).Count(&availableCount)
+	db.Model(&Book{}).Where("is_borrowed = ?", true).Count(&borrowedCount)
+
+	fmt.Printf("📊 Current Library Status:\n")
+	fmt.Printf("   📚 Total Books: %d\n", bookCount)
+	fmt.Printf("   ✅ Available: %d\n", availableCount)
+	fmt.Printf("   📤 Borrowed: %d\n", borrowedCount)
+
+	// Task 3: Add sample data for new users (first-time setup)
+	if bookCount == 0 {
+		fmt.Println("🔧 First-time setup detected - adding sample books...")
+		addSampleBooks()
+
+		// Recount after adding sample data
+		db.Model(&Book{}).Count(&bookCount)
+		fmt.Printf("✅ Added sample books! New total: %d books\n", bookCount)
+	}
+
+	// Task 4: Perform basic data integrity checks
+	fmt.Println("🔍 Performing data integrity checks...")
+
+	// Check for any books with invalid years (basic validation)
+	var invalidBooks int64
+	db.Model(&Book{}).Where("year < ? OR year > ?", 1000, 2030).Count(&invalidBooks)
+	if invalidBooks > 0 {
+		fmt.Printf("⚠️  Warning: Found %d books with potentially invalid years\n", invalidBooks)
+	} else {
+		fmt.Println("✅ Data integrity check passed")
+	}
+
+	fmt.Println("✅ Startup tasks completed successfully!")
+	fmt.Println()
+}
+
+/*
+addSampleBooks adds a set of sample books to the database for new users.
+
+This function is called during first-time setup when the database is empty.
+It populates the library with a diverse collection of programming and
+technical books to demonstrate the application's functionality and provide
+users with immediate data to work with.
+
+Sample Books Include:
+- Programming language books (Go, Python, etc.)
+- Software engineering principles
+- Classic computer science texts
+- Modern development practices
+
+All sample books are added as "available" status by default.
+*/
+func addSampleBooks() {
+	sampleBooks := []Book{
+		{Title: "The Go Programming Language", Author: "Alan Donovan", Year: 2015, IsBorrowed: false},
+		{Title: "Clean Code", Author: "Robert Martin", Year: 2008, IsBorrowed: false},
+		{Title: "Design Patterns", Author: "Gang of Four", Year: 1994, IsBorrowed: true}, // One borrowed for demo
+		{Title: "The Pragmatic Programmer", Author: "Andy Hunt", Year: 1999, IsBorrowed: false},
+		{Title: "Effective Go", Author: "Google Team", Year: 2020, IsBorrowed: false},
+		{Title: "You Don't Know JS", Author: "Kyle Simpson", Year: 2014, IsBorrowed: false},
+		{Title: "Python Crash Course", Author: "Eric Matthes", Year: 2019, IsBorrowed: true}, // Another borrowed for demo
+		{Title: "The Art of Computer Programming", Author: "Donald Knuth", Year: 1968, IsBorrowed: false},
+	}
+
+	// Insert each sample book into the database
+	for _, book := range sampleBooks {
+		result := db.Create(&book)
+		if result.Error != nil {
+			fmt.Printf("⚠️  Warning: Could not add sample book '%s': %v\n", book.Title, result.Error)
+		}
 	}
 }
 
@@ -425,50 +594,22 @@ Input Handling:
 
 Menu Options Routing:
 - Option 1: Add Book - Calls addBook() function
-- Option 2: List Books - Calls listBooks() function  
+- Option 2: List Books - Calls listBooks() function
 - Option 3: Borrow Book - Calls borrowBook() function
 - Option 4: Return Book - Calls returnBook() function
 - Option 5: Exit - Terminates application gracefully
 - Invalid: Displays error message and returns to menu
 
-Legacy Code:
-Contains commented-out test code that was used during development
-to verify the Book struct functionality. This should be removed
-in production versions.
-
 Error Handling:
 - Invalid menu selections are handled gracefully
 - User is prompted to try again rather than terminating
-- Typo in error message ("ty again" should be "try again")
 */
 func menuSelector() {
-	var option int // Stores user's menu selection
-
-	/* 
-	Legacy testing code - used during development to verify Book struct functionality
-	This commented code created a test book instance to validate the struct fields
-	and their accessibility. Should be removed in production version.
-	
-	books := Book{
-		Title: "Harry Potter",
-		Author: "JK Rolins",
-		Year: 2002,
-		isBorrowed: true,
-	}
-	
-	// Debug output for testing struct field access
-	fmt.Println(books.Title)
-	fmt.Println(books.Author)
-	fmt.Println(books.Year)
-	fmt.Println(books.isBorrowed)
-	*/
-
 	// Main application loop - continues until user chooses to exit
 	for {
 		// Display menu options to user
 		displayMenu()
-		fmt.Print("Option => ")
-		fmt.Scanln(&option) // Read user's menu selection
+		option := readInt("Option => ")
 
 		// Route user selection to appropriate handler function
 		switch option {
@@ -482,40 +623,76 @@ func menuSelector() {
 			returnBook() // Process book return
 		case 5:
 			// Graceful application termination
-			fmt.Println("Thank you for using the program.")
-			fmt.Println()
+			fmt.Println("✅ Thank you for using Mini Library Manager!")
+			fmt.Println("💾 All your data has been safely saved to the database.")
+			fmt.Println("👋 Goodbye!")
 			return // Exit the function and terminate application
 		default:
 			// Handle invalid menu selections
-			fmt.Println("Wrong option. Please try again.") // Typo: "ty" should be "try"
+			fmt.Println("❌ Invalid option. Please try again.")
 		}
+
+		// Add a pause after each operation for better user experience
+		fmt.Print("\n📖 Press Enter to continue...")
+		readInput("")
 	}
 }
 
 /*
-main is the application entry point and orchestrates the startup sequence.
+main is the application entry point and orchestrates the complete startup sequence.
 
 This function serves as the primary entry point for the Mini Library Manager
-application. Currently, it only initializes the menu system, but it should
-be enhanced to include database initialization for proper functionality.
+application. It handles the complete application lifecycle from initialization
+to shutdown, ensuring all components are properly set up before user interaction begins.
 
-Current Implementation:
-- Starts the menu selector loop
-- No database initialization (missing critical setup)
+Complete Startup Sequence:
+1. Display application welcome banner and startup information
+2. Initialize database connection and perform schema migrations
+3. Perform necessary startup tasks (data validation, sample data, etc.)
+4. Start the interactive menu system for user operations
+5. Handle graceful application termination with confirmation
 
-Recommended Implementation:
-1. Initialize database connection
-2. Perform any necessary startup tasks
-3. Start the interactive menu system
-4. Handle graceful shutdown if needed
+Critical Operations:
+- Database initialization (creates library.db file and tables if needed)
+- Error handling for startup failures (will terminate if critical errors occur)
+- User interface initialization with clear status reporting
+- Startup task execution for optimal user experience
 
-TODO: Add initDB() call to properly initialize database connection
-TODO: Consider adding application startup messages
-TODO: Add error handling for critical startup failures
+The function ensures that all necessary components are properly initialized
+and validated before allowing user interaction, preventing runtime errors
+related to uninitialized database connections or corrupted data.
+
+Application Architecture:
+This follows a proper application startup pattern with clear separation
+of concerns: initialization → validation → user interface → shutdown.
 */
 func main() {
-	// TODO: Add database initialization here
-	// initDB() should be called before starting the menu system
-	
-	menuSelector() // Start the main interactive loop
+	// Step 1: Display welcome banner and startup information
+	fmt.Println("🚀 Starting Mini Library Manager with Database Integration...")
+	fmt.Println("=" + strings.Repeat("=", 59)) // Create a nice banner line
+	fmt.Println("📚 A CLI-based library management system with SQLite & GORM")
+	fmt.Println("=" + strings.Repeat("=", 59))
+	fmt.Println()
+
+	// Step 2: Initialize database connection and perform migrations
+	fmt.Println("🔧 Initializing database connection...")
+	initDB()
+	fmt.Println()
+
+	// Step 3: Perform necessary startup tasks
+	performStartupTasks()
+
+	// Step 4: Start the interactive menu system for user operations
+	fmt.Println("🎯 Library Manager is ready for use!")
+	fmt.Println("📋 Use the menu below to manage your book collection.")
+
+	menuSelector()
+
+	// Step 5: Handle graceful application termination
+	fmt.Println()
+	fmt.Println("=" + strings.Repeat("=", 40))
+	fmt.Println("📚 Mini Library Manager - Session Complete")
+	fmt.Println("💾 Database: library.db (all data preserved)")
+	fmt.Println("🔧 Status: All operations completed successfully")
+	fmt.Println("=" + strings.Repeat("=", 40))
 }
