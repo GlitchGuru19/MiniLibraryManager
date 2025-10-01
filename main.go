@@ -695,4 +695,6 @@ func main() {
 	fmt.Println("💾 Database: library.db (all data preserved)")
 	fmt.Println("🔧 Status: All operations completed successfully")
 	fmt.Println("=" + strings.Repeat("=", 40))
+
+	fmt.Println("Thank you for using the application")
 }
