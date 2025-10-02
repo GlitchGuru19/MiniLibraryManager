@@ -1,4 +1,3 @@
-
 /*
 Mini Library Manager - A CLI-based library management system
 
@@ -21,9 +20,9 @@ package main
 import "fmt"
 
 type Book struct {
-	Title    string
-	Author   string
-	Year     int
+	Title      string
+	Author     string
+	Year       int
 	IsBorrowed bool
 }
 
@@ -36,8 +35,24 @@ func displayMenu() {
 	fmt.Println("3. Borrow Book")
 	fmt.Println("4. Return Book")
 	fmt.Println("5. Exit")
-} 
+}
 
 func main() {
+	var option int = 0
 	displayMenu()
+	fmt.Print("Please select an opion: ")
+	fmt.Scanln(&option)
+
+	switch option {
+	case 1:
+		fmt.Println("Add Book selected")
+	case 2:
+		fmt.Println("List Books selected")
+	case 3:
+		fmt.Println("Borrow Book")
+	case 4:
+		fmt.Println("Return Book")
+	case 5:
+		fmt.Println("Thank you for using the system.")
+	}
 }
