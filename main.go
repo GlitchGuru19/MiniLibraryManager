@@ -54,5 +54,8 @@ func main() {
 		fmt.Println("Return Book")
 	case 5:
 		fmt.Println("Thank you for using the system.")
+		return
+	default:
+		fmt.Println("Invalid option. Please try again.")
 	}
 }
