@@ -43,19 +43,26 @@ func main() {
 	fmt.Print("Please select an opion: ")
 	fmt.Scanln(&option)
 
-	switch option {
-	case 1:
-		fmt.Println("Add Book selected")
-	case 2:
-		fmt.Println("List Books selected")
-	case 3:
-		fmt.Println("Borrow Book")
-	case 4:
-		fmt.Println("Return Book")
-	case 5:
-		fmt.Println("Thank you for using the system.")
-		return
-	default:
-		fmt.Println("Invalid option. Please try again.")
+	for {
+		switch option {
+		case 1:
+			fmt.Println("\n📖 Add a New Book")
+			fmt.Println("-----------------")
+			return
+		case 2:
+			fmt.Println("List Books selected")
+			return
+		case 3:
+			fmt.Println("Borrow Book")
+			return
+		case 4:
+			fmt.Println("Return Book")
+			return
+		case 5:
+			fmt.Println("Thank you for using the system.")
+			return
+		default:
+			fmt.Println("Invalid option. Please try again.")
+		}
 	}
 }
